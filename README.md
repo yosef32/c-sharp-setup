@@ -29,7 +29,7 @@ To also create and run a small console app in the current folder:
 powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -CreateSample
 ```
 
-WinGet must be available. On current Windows 10 and Windows 11 it comes with App Installer. If `winget` is missing, install App Installer from the Microsoft Store and run the script again.
+If `winget` is missing, the script installs it. That needs Windows 10 version 1809 or newer, or Windows 11, plus an internet connection.
 
 ## Mac
 

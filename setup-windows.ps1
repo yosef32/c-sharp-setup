@@ -5,6 +5,7 @@
 
 .DESCRIPTION
   Installs, if missing:
+    - WinGet (the Windows package installer), when the winget command is missing
     - Git
     - .NET SDK 10 (current long-term support release; includes the runtime)
     - Visual Studio Code
@@ -65,6 +66,196 @@ function Test-Command {
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+function Test-WingetWorks {
+    param([string]$CommandPath)
+    if (-not $CommandPath -or -not (Test-Path -LiteralPath $CommandPath)) {
+        return $false
+    }
+
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        & $CommandPath --version *> $null
+        return $LASTEXITCODE -eq 0
+    }
+    catch {
+        return $false
+    }
+    finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
+function Find-WorkingWinget {
+    $command = Get-Command winget -ErrorAction SilentlyContinue
+    if ($command -and (Test-WingetWorks $command.Source)) {
+        return $command.Source
+    }
+
+    $candidates = @(
+        "$env:LOCALAPPDATA\Microsoft\WindowsApps\winget.exe"
+    )
+    $package = Get-AppxPackage -Name Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue
+    if ($package -and $package.InstallLocation) {
+        $candidates += (Join-Path $package.InstallLocation "winget.exe")
+    }
+
+    foreach ($candidate in $candidates) {
+        if (Test-WingetWorks $candidate) {
+            $windowsApps = "$env:LOCALAPPDATA\Microsoft\WindowsApps"
+            if ($env:Path -notlike "*${windowsApps}*") {
+                $env:Path = "$windowsApps;$env:Path"
+            }
+            return $candidate
+        }
+    }
+
+    return $null
+}
+
+function Get-WindowsPackageArch {
+    if ($env:PROCESSOR_ARCHITECTURE -eq "ARM64" -or $env:PROCESSOR_ARCHITEW6432 -eq "ARM64") {
+        return "arm64"
+    }
+    return "x64"
+}
+
+function Install-WinGetFromGitHub {
+    $temp = Join-Path $env:TEMP "csharp-setup-winget"
+    New-Item -ItemType Directory -Force -Path $temp | Out-Null
+
+    $headers = @{ "User-Agent" = "c-sharp-setup" }
+    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/microsoft/winget-cli/releases/latest" -Headers $headers
+    $bundle = @($release.assets | Where-Object { $_.name -like "*.msixbundle" } | Select-Object -First 1)
+    if ($bundle.Count -eq 0) {
+        throw "Could not find the WinGet installer on GitHub."
+    }
+
+    $bundlePath = Join-Path $temp $bundle[0].name
+    Invoke-WebRequest -Uri $bundle[0].browser_download_url -OutFile $bundlePath -UseBasicParsing
+
+    $deps = @($release.assets | Where-Object { $_.name -like "*Dependencies*.zip" } | Select-Object -First 1)
+    if ($deps.Count -gt 0) {
+        $zipPath = Join-Path $temp $deps[0].name
+        Invoke-WebRequest -Uri $deps[0].browser_download_url -OutFile $zipPath -UseBasicParsing
+        $depsDir = Join-Path $temp "deps"
+        Expand-Archive -Path $zipPath -DestinationPath $depsDir -Force
+
+        $arch = Get-WindowsPackageArch
+        $archDir = Get-ChildItem -Path $depsDir -Directory -Recurse | Where-Object { $_.Name -eq $arch } | Select-Object -First 1
+        if ($archDir) {
+            $dependencyPackages = @(Get-ChildItem -Path $archDir.FullName -File | Where-Object {
+                $_.Extension -in @(".appx", ".msix")
+            })
+            foreach ($dependency in $dependencyPackages) {
+                try {
+                    Add-AppxPackage -Path $dependency.FullName -ErrorAction Stop
+                }
+                catch {
+                    Write-Host "    Skipping $($dependency.Name); it is already installed or not required."
+                }
+            }
+        }
+    }
+
+    Add-AppxPackage -Path $bundlePath -ErrorAction Stop
+}
+
+function Install-WinGet {
+    Write-Step "WinGet was not found. Installing it."
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $ProgressPreference = "SilentlyContinue"
+
+    Write-Host "    Registering App Installer, if Windows already has it."
+    try {
+        Add-AppxPackage -RegisterByFamilyName -MainPackage Microsoft.DesktopAppInstaller_8wekyb3d8bbwe -ErrorAction Stop
+    }
+    catch {
+        Write-Host "    App Installer is not on this account yet."
+    }
+
+    $existing = Get-AppxPackage -Name Microsoft.DesktopAppInstaller -ErrorAction SilentlyContinue
+    if ($existing -and $existing.InstallLocation) {
+        $manifest = Join-Path $existing.InstallLocation "AppxManifest.xml"
+        if (Test-Path -LiteralPath $manifest) {
+            try {
+                Add-AppxPackage -DisableDevelopmentMode -Register $manifest -ErrorAction Stop
+            }
+            catch {
+                Write-Host "    Could not repair the existing App Installer. Downloading a new copy."
+            }
+        }
+    }
+
+    Refresh-SessionPath
+    if (Find-WorkingWinget) {
+        Write-Ok "WinGet is ready."
+        return
+    }
+
+    $installed = $false
+    try {
+        Write-Host "    Downloading WinGet with Microsoft's installer module."
+        $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+            [Security.Principal.WindowsBuiltInRole]::Administrator)
+
+        $providerParams = @{ Name = "NuGet"; Force = $true }
+        $moduleParams = @{
+            Name            = "Microsoft.WinGet.Client"
+            Force           = $true
+            Repository      = "PSGallery"
+            AllowClobber    = $true
+            Confirm         = $false
+        }
+        if ($isAdmin) {
+            $moduleParams.Scope = "AllUsers"
+        }
+        else {
+            $providerParams.Scope = "CurrentUser"
+            $moduleParams.Scope = "CurrentUser"
+        }
+
+        Install-PackageProvider @providerParams | Out-Null
+        try {
+            if ((Get-PSRepository -Name PSGallery -ErrorAction Stop).InstallationPolicy -ne "Trusted") {
+                Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+            }
+        }
+        catch {
+            Write-Host "    Continuing without changing the PowerShell Gallery trust policy."
+        }
+
+        Install-Module @moduleParams
+        Import-Module Microsoft.WinGet.Client -Force
+        if ($isAdmin) {
+            Repair-WinGetPackageManager -AllUsers
+        }
+        else {
+            Repair-WinGetPackageManager
+        }
+        $installed = $true
+    }
+    catch {
+        Write-Host "    Microsoft's installer module did not finish. Downloading WinGet from GitHub."
+        Write-Host "    $($_.Exception.Message)"
+    }
+
+    if (-not $installed -or -not (Find-WorkingWinget)) {
+        Install-WinGetFromGitHub
+    }
+
+    Refresh-SessionPath
+    if (-not (Find-WorkingWinget)) {
+        throw @"
+WinGet still is not available.
+
+Use Windows 10 version 1809 or newer, or Windows 11. Then open Settings, go to Apps, Advanced app settings, App execution aliases, and turn on Windows Package Manager Client. Run this script again after that.
+"@
+    }
+
+    Write-Ok "WinGet is ready."
+}
+
 function Install-WingetPackage {
     param(
         [Parameter(Mandatory = $true)][string]$Id,
@@ -72,7 +263,7 @@ function Install-WingetPackage {
     )
 
     Write-Step "Installing $Label ($Id)"
-    & winget install --id $Id --exact --source winget `
+    & $script:WingetCommand install --id $Id --exact --source winget `
         --accept-package-agreements --accept-source-agreements `
         --disable-interactivity
 
@@ -113,8 +304,10 @@ Write-Host "C# + VS Code setup for Windows" -ForegroundColor White
 Write-Host "This installs Git, the .NET 10 SDK, Visual Studio Code, and C# Dev Kit."
 
 Write-Step "Checking WinGet"
-if (-not (Test-Command "winget")) {
-    throw "WinGet is not installed. Install 'App Installer' from the Microsoft Store, then run this script again."
+$script:WingetCommand = Find-WorkingWinget
+if (-not $script:WingetCommand) {
+    Install-WinGet
+    $script:WingetCommand = Find-WorkingWinget
 }
 Write-Ok "WinGet is available."
 
