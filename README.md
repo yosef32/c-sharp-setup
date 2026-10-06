@@ -50,6 +50,27 @@ To also create and run a small console app in the current folder:
 
 The script uses the Homebrew `dotnet-sdk` cask, which installs Microsoft's .NET package. If that cask is unavailable, it falls back to Microsoft's `dotnet-install.sh` script and adds `~/.dotnet` to your PATH.
 
+## Uninstall
+
+These scripts remove Git, the .NET SDK, Visual Studio Code, and the C# extensions. They ask you to type `YES` before deleting anything.
+
+On Windows, WinGet stays installed. On Mac, Homebrew and the Xcode Command Line Tools stay installed.
+
+Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\uninstall-windows.ps1
+```
+
+Mac:
+
+```bash
+chmod +x uninstall-mac.sh
+./uninstall-mac.sh
+```
+
+Add `-RemoveSample` on Windows, or `--remove-sample` on Mac, to also delete a `HelloCSharp` sample in the current folder. Add `-Force` on Windows, or `--yes` on Mac, to skip the confirmation.
+
 ## After setup
 
 Open a new terminal, then create a project:
