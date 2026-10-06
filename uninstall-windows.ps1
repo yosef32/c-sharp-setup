@@ -16,6 +16,8 @@
   The script asks you to type YES before it removes anything.
   Pass -Force to skip that question.
 
+  Double-click uninstall-windows.cmd to run this from File Explorer.
+
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\uninstall-windows.ps1
 

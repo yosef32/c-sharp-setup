@@ -19,7 +19,7 @@
 # the current folder, runs it once, and opens that folder in Visual Studio Code.
 # If HelloCSharp is already there, it opens the existing project.
 #
-# Usage:
+# Double-click setup-mac.command in Finder, or from Terminal:
 #   chmod +x setup-mac.sh
 #   ./setup-mac.sh
 

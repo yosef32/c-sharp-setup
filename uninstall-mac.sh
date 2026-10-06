@@ -13,7 +13,7 @@
 # The script asks you to type YES before it removes anything.
 # Pass --yes to skip that question.
 #
-# Usage:
+# Double-click uninstall-mac.command in Finder, or from Terminal:
 #   chmod +x uninstall-mac.sh
 #   ./uninstall-mac.sh
 #   ./uninstall-mac.sh --yes --remove-sample

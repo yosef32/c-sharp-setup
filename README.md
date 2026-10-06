@@ -15,13 +15,15 @@ C# Dev Kit is free for individuals, students, and open-source work. The first ti
 
 ## Windows
 
-Open PowerShell and run:
+Double-click `setup-windows.cmd`. A window opens, installs everything, and stays open until you press a key.
+
+Approve the permission prompt if Windows shows one. That lets the .NET SDK install for the whole PC.
+
+You can also open PowerShell and run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1
 ```
-
-Approve the permission prompt if Windows shows one. That lets the .NET SDK install for the whole PC.
 
 When the install finishes, the script creates a `HelloCSharp` console app in the current folder, runs it once, and opens that folder in Visual Studio Code.
 
@@ -29,14 +31,18 @@ If `winget` is missing, the script installs it. That needs Windows 10 version 18
 
 ## Mac
 
-Open Terminal and run:
+Double-click `setup-mac.command`. Terminal opens, installs everything, and stays open until you press Enter.
+
+If macOS says the file cannot be opened, right-click it, choose **Open**, then **Open** again.
+
+Homebrew may ask for your Mac password the first time. If a dialog appears asking to install Xcode Command Line Tools, finish that dialog and double-click the file again.
+
+You can also open Terminal and run:
 
 ```bash
 chmod +x setup-mac.sh
 ./setup-mac.sh
 ```
-
-Homebrew may ask for your Mac password the first time. If a dialog appears asking to install Xcode Command Line Tools, finish that dialog and run the script again.
 
 When the install finishes, the script creates a `HelloCSharp` console app in the current folder, runs it once, and opens that folder in Visual Studio Code.
 
@@ -48,13 +54,13 @@ These scripts remove Git, the .NET SDK, Visual Studio Code, and the C# extension
 
 On Windows, WinGet stays installed. On Mac, Homebrew and the Xcode Command Line Tools stay installed.
 
-Windows:
+Windows: double-click `uninstall-windows.cmd`, or run:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\uninstall-windows.ps1
 ```
 
-Mac:
+Mac: double-click `uninstall-mac.command`, or run:
 
 ```bash
 chmod +x uninstall-mac.sh

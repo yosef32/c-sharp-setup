@@ -22,6 +22,8 @@
   the current folder, runs it once, and opens that folder in Visual Studio Code.
   If HelloCSharp is already there, it opens the existing project.
 
+  Double-click setup-windows.cmd to run this from File Explorer.
+
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1
 #>
