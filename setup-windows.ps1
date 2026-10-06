@@ -312,71 +312,86 @@ function Get-DotNetInstallRoots {
     )
 }
 
+function Test-DotNetRoot {
+    param([string]$Root)
+
+    $exe = Join-Path $Root "dotnet.exe"
+    if (-not (Test-Path -LiteralPath $exe)) {
+        return $null
+    }
+
+    $hadRoot = Test-Path Env:DOTNET_ROOT
+    $oldRoot = $env:DOTNET_ROOT
+    $oldPath = $env:Path
+    try {
+        # Ask this exact install where its SDKs are. A leftover DOTNET_ROOT
+        # can hide every SDK and produce "no .NET Core SDKs" from dotnet run.
+        $env:DOTNET_ROOT = $Root
+        $env:Path = "$Root;$oldPath"
+        $lines = @(Get-SdkLines -DotNetExe $exe)
+        $sdk10 = @($lines | Where-Object { $_ -match "^10\." })
+        if ($sdk10.Count -eq 0) {
+            return $null
+        }
+
+        return @{
+            Exe   = $exe
+            Lines = $lines
+            Root  = $Root
+        }
+    }
+    finally {
+        if ($hadRoot) {
+            $env:DOTNET_ROOT = $oldRoot
+        }
+        else {
+            Remove-Item Env:DOTNET_ROOT -ErrorAction SilentlyContinue
+        }
+        $env:Path = $oldPath
+    }
+}
+
 function Use-DotNetRoot {
     param([string]$Root)
 
     $env:DOTNET_ROOT = $Root
     $trimmed = @($env:Path -split ";" | Where-Object { $_ -and ($_ -ne $Root) })
     $env:Path = "$Root;" + ($trimmed -join ";")
+    $script:DotNetExe = Join-Path $Root "dotnet.exe"
+    $script:DotNetRoot = $Root
 
-    $userRoot = [Environment]::GetEnvironmentVariable("DOTNET_ROOT", "User")
-    $rootUnderUser = $Root.StartsWith($env:LocalAppData, [StringComparison]::OrdinalIgnoreCase)
-    if ($rootUnderUser) {
-        [Environment]::SetEnvironmentVariable("DOTNET_ROOT", $Root, "User")
-        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-        if ([string]::IsNullOrEmpty($userPath)) {
-            [Environment]::SetEnvironmentVariable("Path", $Root, "User")
-        }
-        elseif ($userPath -notlike "*${Root}*") {
-            [Environment]::SetEnvironmentVariable("Path", "$Root;$userPath", "User")
-        }
+    [Environment]::SetEnvironmentVariable("DOTNET_ROOT", $Root, "User")
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if ([string]::IsNullOrEmpty($userPath)) {
+        [Environment]::SetEnvironmentVariable("Path", $Root, "User")
     }
-    elseif ($userRoot -and -not (Test-Path -LiteralPath (Join-Path $userRoot "sdk"))) {
-        [Environment]::SetEnvironmentVariable("DOTNET_ROOT", $null, "User")
+    elseif ($userPath -notlike "*${Root}*") {
+        [Environment]::SetEnvironmentVariable("Path", "$Root;$userPath", "User")
     }
 }
 
 function Find-DotNet10 {
-    $hosts = @()
+    $roots = @()
     $command = Get-Command dotnet -ErrorAction SilentlyContinue
     if ($command) {
-        $hosts += $command.Source
+        $roots += (Split-Path -Parent $command.Source)
     }
-    foreach ($root in (Get-DotNetInstallRoots)) {
-        $hosts += (Join-Path $root "dotnet.exe")
-    }
+    $roots += Get-DotNetInstallRoots
 
     $seen = @{}
-    foreach ($hostExe in $hosts) {
-        if (-not $hostExe -or $seen.ContainsKey($hostExe.ToLowerInvariant())) {
+    foreach ($root in $roots) {
+        if (-not $root) {
             continue
         }
-        $seen[$hostExe.ToLowerInvariant()] = $true
-
-        $lines = @(Get-SdkLines -DotNetExe $hostExe)
-        foreach ($line in $lines) {
-            if ($line -match "^10\.") {
-                return @{
-                    Exe   = $hostExe
-                    Lines = $lines
-                    Root  = Split-Path -Parent $hostExe
-                }
-            }
+        $key = $root.ToLowerInvariant()
+        if ($seen.ContainsKey($key)) {
+            continue
         }
-    }
+        $seen[$key] = $true
 
-    foreach ($root in (Get-DotNetInstallRoots)) {
-        $sdkDir = Join-Path $root "sdk"
-        $exe = Join-Path $root "dotnet.exe"
-        if ((Test-Path -LiteralPath $exe) -and (Test-Path -LiteralPath $sdkDir)) {
-            $match = @(Get-ChildItem -LiteralPath $sdkDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "^10\." })
-            if ($match.Count -gt 0) {
-                return @{
-                    Exe   = $exe
-                    Lines = @($match | ForEach-Object { "$($_.Name) [$root]" })
-                    Root  = $root
-                }
-            }
+        $found = Test-DotNetRoot -Root $root
+        if ($found) {
+            return $found
         }
     }
 
@@ -395,8 +410,6 @@ function Install-DotNetSdkWithScript {
     if ($LASTEXITCODE -ne 0) {
         throw "The .NET install script failed with exit code $LASTEXITCODE."
     }
-
-    Use-DotNetRoot -Root $installDir
 }
 
 function Ensure-DotNet10 {
@@ -434,6 +447,28 @@ function Ensure-DotNet10 {
 
     Use-DotNetRoot -Root $found.Root
     return @($found.Lines)
+}
+
+function Write-ProjectEditorSettings {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectDir,
+        [Parameter(Mandatory = $true)][string]$DotNetExe,
+        [Parameter(Mandatory = $true)][string]$DotNetRoot
+    )
+
+    $vscodeDir = Join-Path $ProjectDir ".vscode"
+    New-Item -ItemType Directory -Force -Path $vscodeDir | Out-Null
+    $exeJson = $DotNetExe.Replace("\", "\\")
+    $rootJson = $DotNetRoot.Replace("\", "\\")
+    @"
+{
+  "dotnet.dotnetPath": "$exeJson",
+  "dotnetAcquisitionExtension.sharedExistingDotnetPath": "$exeJson",
+  "terminal.integrated.env.windows": {
+    "DOTNET_ROOT": "$rootJson"
+  }
+}
+"@ | Set-Content -LiteralPath (Join-Path $vscodeDir "settings.json") -Encoding utf8
 }
 
 function Find-CodeCommand {
@@ -521,11 +556,11 @@ if (-not (Test-Path -LiteralPath $sampleDir)) {
     New-Item -ItemType Directory -Path $sampleDir | Out-Null
     Push-Location $sampleDir
     try {
-        & dotnet new console --name HelloCSharp --output .
+        & $script:DotNetExe new console --name HelloCSharp --output .
         if ($LASTEXITCODE -ne 0) {
             throw "dotnet new console failed."
         }
-        & dotnet run
+        & $script:DotNetExe run
         if ($LASTEXITCODE -ne 0) {
             throw "The sample project did not run."
         }
@@ -537,10 +572,23 @@ if (-not (Test-Path -LiteralPath $sampleDir)) {
 }
 elseif (Test-Path -LiteralPath $projectFile) {
     Write-Ok "Using the existing project at $sampleDir"
+    Push-Location $sampleDir
+    try {
+        & $script:DotNetExe run
+        if ($LASTEXITCODE -ne 0) {
+            throw "dotnet run failed. The .NET 10 SDK is installed at $($script:DotNetRoot)."
+        }
+    }
+    finally {
+        Pop-Location
+    }
 }
 else {
     throw "HelloCSharp already exists and is not a C# project. Move that folder aside and run this script again."
 }
+
+Write-ProjectEditorSettings -ProjectDir $sampleDir -DotNetExe $script:DotNetExe -DotNetRoot $script:DotNetRoot
+Write-Ok "VS Code will use the SDK at $($script:DotNetRoot)"
 
 Write-Step "Opening the project in Visual Studio Code"
 & $codeCmd $sampleDir
@@ -551,7 +599,8 @@ Write-Ok "VS Code is opening $sampleDir"
 
 Write-Step "This PC is ready for C#"
 Write-Host ""
-Write-Host "HelloCSharp is open in Visual Studio Code. In the terminal there, run:" -ForegroundColor White
+Write-Host "Close any Visual Studio Code window that was already open, and use the new HelloCSharp window." -ForegroundColor White
+Write-Host "Then open a new terminal in that window and run:" -ForegroundColor White
 Write-Host ""
 Write-Host "    dotnet run" -ForegroundColor Yellow
 Write-Host ""
