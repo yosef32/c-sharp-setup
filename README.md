@@ -2,6 +2,8 @@
 
 These scripts install everything needed to start writing C# in Visual Studio Code.
 
+Step by step, with every option: [English](en.md) · [עברית](he.md)
+
 Both scripts install:
 
 - Git
@@ -80,3 +82,22 @@ dotnet run
 ```
 
 Sign in if C# Dev Kit asks.
+
+## New project
+
+After setup, these scripts create another console app. A window asks you to set the project name. `MyApp` is already filled in, so change it or keep it, then confirm. On Windows the button is **OK**. On a Mac it is **Create**. The script creates that folder, runs the app once, and opens it in Visual Studio Code.
+
+Windows: double-click `new-project-windows.cmd`, or run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\new-project-windows.ps1 -Name MyApp
+```
+
+Mac: double-click `new-project-mac.command`. If macOS says the file cannot be opened, right-click it, choose **Open**, then **Open** again. You can also run:
+
+```bash
+chmod +x new-project-mac.sh
+./new-project-mac.sh MyApp
+```
+
+Use a name that starts with a letter, such as `MyApp`. Press F5 in the window that opens, or start **Launch MyApp** from **Run and Debug**.
