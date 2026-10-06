@@ -65,10 +65,12 @@ Add `-RemoveSample` on Windows, or `--remove-sample` on Mac, to also delete a `H
 
 ## After setup
 
-The script leaves `HelloCSharp` open in Visual Studio Code. In the VS Code terminal, run:
+The script leaves `HelloCSharp` open in Visual Studio Code. Press F5, or open **Run and Debug** and start **Launch HelloCSharp**. That configuration is in `HelloCSharp/.vscode/launch.json`. It builds the project, then runs it under the debugger.
+
+You can also run it from the VS Code terminal:
 
 ```bash
 dotnet run
 ```
 
-You can also start it with **Run and Debug**. Sign in if C# Dev Kit asks.
+Sign in if C# Dev Kit asks.

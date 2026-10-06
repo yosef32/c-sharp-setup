@@ -168,6 +168,52 @@ for extension in "${EXTENSIONS[@]}"; do
   ok "$extension"
 done
 
+write_launch_config() {
+  local project_dir="$1"
+  mkdir -p "$project_dir/.vscode"
+  cat > "$project_dir/.vscode/launch.json" <<'EOF'
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch HelloCSharp",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/bin/Debug/net10.0/HelloCSharp.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "console": "integratedTerminal"
+    }
+  ]
+}
+EOF
+  cat > "$project_dir/.vscode/tasks.json" <<'EOF'
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "build",
+        "${workspaceFolder}/HelloCSharp.csproj",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary;ForceNoAlign"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}
+EOF
+}
+
 step "Creating a HelloCSharp project in the current folder"
 if [[ ! -e HelloCSharp ]]; then
   mkdir HelloCSharp
@@ -183,6 +229,9 @@ else
   die "HelloCSharp already exists and is not a C# project. Move that folder aside and run this script again."
 fi
 
+write_launch_config "$(pwd)/HelloCSharp"
+ok "Run and Debug is set to Launch HelloCSharp"
+
 step "Opening the project in Visual Studio Code"
 "$CODE_BIN" "$(pwd)/HelloCSharp"
 ok "VS Code is opening $(pwd)/HelloCSharp"
@@ -190,7 +239,8 @@ ok "VS Code is opening $(pwd)/HelloCSharp"
 step "This Mac is ready for C#"
 cat <<'EOF'
 
-HelloCSharp is open in Visual Studio Code. In the terminal there, run:
+HelloCSharp is open in Visual Studio Code. Press F5, or open Run and Debug
+and start Launch HelloCSharp. You can also run it from the terminal:
 
     dotnet run
 

@@ -471,6 +471,58 @@ function Write-ProjectEditorSettings {
 "@ | Set-Content -LiteralPath (Join-Path $vscodeDir "settings.json") -Encoding utf8
 }
 
+function Write-LaunchConfig {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectDir
+    )
+
+    $vscodeDir = Join-Path $ProjectDir ".vscode"
+    New-Item -ItemType Directory -Force -Path $vscodeDir | Out-Null
+
+    @'
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Launch HelloCSharp",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "build",
+      "program": "${workspaceFolder}/bin/Debug/net10.0/HelloCSharp.dll",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "console": "integratedTerminal"
+    }
+  ]
+}
+'@ | Set-Content -LiteralPath (Join-Path $vscodeDir "launch.json") -Encoding utf8
+
+    @'
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "command": "dotnet",
+      "type": "process",
+      "args": [
+        "build",
+        "${workspaceFolder}/HelloCSharp.csproj",
+        "/property:GenerateFullPaths=true",
+        "/consoleloggerparameters:NoSummary;ForceNoAlign"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$msCompile"
+    }
+  ]
+}
+'@ | Set-Content -LiteralPath (Join-Path $vscodeDir "tasks.json") -Encoding utf8
+}
+
 function Find-CodeCommand {
     $candidates = @(
         "$env:LOCALAPPDATA\Programs\Microsoft VS Code\bin\code.cmd",
@@ -588,7 +640,9 @@ else {
 }
 
 Write-ProjectEditorSettings -ProjectDir $sampleDir -DotNetExe $script:DotNetExe -DotNetRoot $script:DotNetRoot
+Write-LaunchConfig -ProjectDir $sampleDir
 Write-Ok "VS Code will use the SDK at $($script:DotNetRoot)"
+Write-Ok "Run and Debug is set to Launch HelloCSharp"
 
 Write-Step "Opening the project in Visual Studio Code"
 & $codeCmd $sampleDir
@@ -600,7 +654,8 @@ Write-Ok "VS Code is opening $sampleDir"
 Write-Step "This PC is ready for C#"
 Write-Host ""
 Write-Host "Close any Visual Studio Code window that was already open, and use the new HelloCSharp window." -ForegroundColor White
-Write-Host "Then open a new terminal in that window and run:" -ForegroundColor White
+Write-Host "Press F5, or open Run and Debug and start Launch HelloCSharp." -ForegroundColor White
+Write-Host "You can also open a new terminal in that window and run:" -ForegroundColor White
 Write-Host ""
 Write-Host "    dotnet run" -ForegroundColor Yellow
 Write-Host ""
