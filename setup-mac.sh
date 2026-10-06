@@ -15,10 +15,13 @@
 # C# Dev Kit is free for individuals, students, and open-source work. The first
 # time you open it, VS Code may ask you to sign in with a Microsoft account.
 #
+# When the install finishes, the script creates a HelloCSharp console app in
+# the current folder, runs it once, and opens that folder in Visual Studio Code.
+# If HelloCSharp is already there, it opens the existing project.
+#
 # Usage:
 #   chmod +x setup-mac.sh
 #   ./setup-mac.sh
-#   ./setup-mac.sh --sample
 
 set -euo pipefail
 
@@ -28,13 +31,10 @@ EXTENSIONS=(
   "ms-dotnettools.csharp"
   "ms-dotnettools.csdevkit"
 )
-CREATE_SAMPLE=0
 
-if [[ "${1:-}" == "--sample" ]]; then
-  CREATE_SAMPLE=1
-elif [[ $# -gt 0 ]]; then
+if [[ $# -gt 0 ]]; then
   echo "Unknown option: $1" >&2
-  echo "Usage: ./setup-mac.sh [--sample]" >&2
+  echo "Usage: ./setup-mac.sh" >&2
   exit 1
 fi
 
@@ -168,28 +168,31 @@ for extension in "${EXTENSIONS[@]}"; do
   ok "$extension"
 done
 
-if [[ "$CREATE_SAMPLE" -eq 1 ]]; then
-  step "Creating a HelloCSharp sample in the current folder"
-  [[ ! -e HelloCSharp ]] || die "Refusing to overwrite ./HelloCSharp. Move that folder aside or run without --sample."
+step "Creating a HelloCSharp project in the current folder"
+if [[ ! -e HelloCSharp ]]; then
   mkdir HelloCSharp
   (
     cd HelloCSharp
     dotnet new console --name HelloCSharp --output .
     dotnet run
   )
-  ok "Sample project is in $(pwd)/HelloCSharp"
+  ok "Created $(pwd)/HelloCSharp"
+elif [[ -f HelloCSharp/HelloCSharp.csproj ]]; then
+  ok "Using the existing project at $(pwd)/HelloCSharp"
+else
+  die "HelloCSharp already exists and is not a C# project. Move that folder aside and run this script again."
 fi
+
+step "Opening the project in Visual Studio Code"
+"$CODE_BIN" "$(pwd)/HelloCSharp"
+ok "VS Code is opening $(pwd)/HelloCSharp"
 
 step "This Mac is ready for C#"
 cat <<'EOF'
 
-Open a new terminal so every program picks up the updated PATH, then try:
+HelloCSharp is open in Visual Studio Code. In the terminal there, run:
 
-    mkdir HelloCSharp
-    cd HelloCSharp
-    dotnet new console
-    code .
     dotnet run
 
-In VS Code, sign in if C# Dev Kit asks. That unlocks solution view, debugging, and tests.
+Sign in if C# Dev Kit asks. That unlocks solution view, debugging, and tests.
 EOF

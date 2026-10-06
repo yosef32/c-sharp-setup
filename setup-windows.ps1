@@ -18,16 +18,13 @@
   C# Dev Kit is free for individuals, students, and open-source work. The first
   time you open it, VS Code may ask you to sign in with a Microsoft account.
 
-.EXAMPLE
-  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1
+  When the install finishes, the script creates a HelloCSharp console app in
+  the current folder, runs it once, and opens that folder in Visual Studio Code.
+  If HelloCSharp is already there, it opens the existing project.
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -CreateSample
+  powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1
 #>
-[CmdletBinding()]
-param(
-    [switch]$CreateSample
-)
 
 $ErrorActionPreference = "Stop"
 
@@ -517,12 +514,10 @@ foreach ($extension in $Extensions) {
     Write-Ok $extension
 }
 
-if ($CreateSample) {
-    Write-Step "Creating a HelloCSharp sample in the current folder"
-    $sampleDir = Join-Path (Get-Location) "HelloCSharp"
-    if (Test-Path -LiteralPath $sampleDir) {
-        throw "Refusing to overwrite $sampleDir. Move that folder aside or run without -CreateSample."
-    }
+Write-Step "Creating a HelloCSharp project in the current folder"
+$sampleDir = Join-Path (Get-Location) "HelloCSharp"
+$projectFile = Join-Path $sampleDir "HelloCSharp.csproj"
+if (-not (Test-Path -LiteralPath $sampleDir)) {
     New-Item -ItemType Directory -Path $sampleDir | Out-Null
     Push-Location $sampleDir
     try {
@@ -538,17 +533,26 @@ if ($CreateSample) {
     finally {
         Pop-Location
     }
-    Write-Ok "Sample project is in $sampleDir"
+    Write-Ok "Created $sampleDir"
 }
+elseif (Test-Path -LiteralPath $projectFile) {
+    Write-Ok "Using the existing project at $sampleDir"
+}
+else {
+    throw "HelloCSharp already exists and is not a C# project. Move that folder aside and run this script again."
+}
+
+Write-Step "Opening the project in Visual Studio Code"
+& $codeCmd $sampleDir
+if ($LASTEXITCODE -ne 0) {
+    throw "Visual Studio Code did not open $sampleDir."
+}
+Write-Ok "VS Code is opening $sampleDir"
 
 Write-Step "This PC is ready for C#"
 Write-Host ""
-Write-Host "Open a new terminal so every program picks up the updated PATH, then try:" -ForegroundColor White
+Write-Host "HelloCSharp is open in Visual Studio Code. In the terminal there, run:" -ForegroundColor White
 Write-Host ""
-Write-Host "    mkdir HelloCSharp" -ForegroundColor Yellow
-Write-Host "    cd HelloCSharp" -ForegroundColor Yellow
-Write-Host "    dotnet new console" -ForegroundColor Yellow
-Write-Host "    code ." -ForegroundColor Yellow
 Write-Host "    dotnet run" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "In VS Code, sign in if C# Dev Kit asks. That unlocks solution view, debugging, and tests." -ForegroundColor White
+Write-Host "Sign in if C# Dev Kit asks. That unlocks solution view, debugging, and tests." -ForegroundColor White

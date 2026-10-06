@@ -23,11 +23,7 @@ powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1
 
 Approve the permission prompt if Windows shows one. That lets the .NET SDK install for the whole PC.
 
-To also create and run a small console app in the current folder:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\setup-windows.ps1 -CreateSample
-```
+When the install finishes, the script creates a `HelloCSharp` console app in the current folder, runs it once, and opens that folder in Visual Studio Code.
 
 If `winget` is missing, the script installs it. That needs Windows 10 version 1809 or newer, or Windows 11, plus an internet connection.
 
@@ -42,11 +38,7 @@ chmod +x setup-mac.sh
 
 Homebrew may ask for your Mac password the first time. If a dialog appears asking to install Xcode Command Line Tools, finish that dialog and run the script again.
 
-To also create and run a small console app in the current folder:
-
-```bash
-./setup-mac.sh --sample
-```
+When the install finishes, the script creates a `HelloCSharp` console app in the current folder, runs it once, and opens that folder in Visual Studio Code.
 
 The script uses the Homebrew `dotnet-sdk` cask, which installs Microsoft's .NET package. If that cask is unavailable, it falls back to Microsoft's `dotnet-install.sh` script and adds `~/.dotnet` to your PATH.
 
@@ -73,14 +65,10 @@ Add `-RemoveSample` on Windows, or `--remove-sample` on Mac, to also delete a `H
 
 ## After setup
 
-Open a new terminal, then create a project:
+The script leaves `HelloCSharp` open in Visual Studio Code. In the VS Code terminal, run:
 
 ```bash
-mkdir HelloCSharp
-cd HelloCSharp
-dotnet new console
-code .
 dotnet run
 ```
 
-In VS Code, use **Run and Debug** to start the app with the debugger.
+You can also start it with **Run and Debug**. Sign in if C# Dev Kit asks.
