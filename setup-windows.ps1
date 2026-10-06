@@ -276,6 +276,169 @@ function Install-WingetPackage {
     throw "winget could not install $Label (exit code $code). Re-run this script from a normal PowerShell window and approve any permission prompts."
 }
 
+function Get-SdkLines {
+    param([string]$DotNetExe)
+
+    if (-not (Test-Path -LiteralPath $DotNetExe)) {
+        return @()
+    }
+
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $raw = @(& $DotNetExe --list-sdks 2>&1)
+    }
+    catch {
+        return @()
+    }
+    finally {
+        $ErrorActionPreference = $previous
+    }
+
+    $lines = @()
+    foreach ($item in $raw) {
+        $text = "$item".Trim()
+        if ($text -match "^[0-9]+\.[0-9]+") {
+            $lines += $text
+        }
+    }
+    return $lines
+}
+
+function Get-DotNetInstallRoots {
+    return @(
+        "$env:ProgramFiles\dotnet",
+        "$env:ProgramFiles\dotnet\x64",
+        "${env:ProgramFiles(x86)}\dotnet",
+        "$env:LocalAppData\Microsoft\dotnet",
+        "$env:LocalAppData\dotnet"
+    )
+}
+
+function Use-DotNetRoot {
+    param([string]$Root)
+
+    $env:DOTNET_ROOT = $Root
+    $trimmed = @($env:Path -split ";" | Where-Object { $_ -and ($_ -ne $Root) })
+    $env:Path = "$Root;" + ($trimmed -join ";")
+
+    $userRoot = [Environment]::GetEnvironmentVariable("DOTNET_ROOT", "User")
+    $rootUnderUser = $Root.StartsWith($env:LocalAppData, [StringComparison]::OrdinalIgnoreCase)
+    if ($rootUnderUser) {
+        [Environment]::SetEnvironmentVariable("DOTNET_ROOT", $Root, "User")
+        $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+        if ([string]::IsNullOrEmpty($userPath)) {
+            [Environment]::SetEnvironmentVariable("Path", $Root, "User")
+        }
+        elseif ($userPath -notlike "*${Root}*") {
+            [Environment]::SetEnvironmentVariable("Path", "$Root;$userPath", "User")
+        }
+    }
+    elseif ($userRoot -and -not (Test-Path -LiteralPath (Join-Path $userRoot "sdk"))) {
+        [Environment]::SetEnvironmentVariable("DOTNET_ROOT", $null, "User")
+    }
+}
+
+function Find-DotNet10 {
+    $hosts = @()
+    $command = Get-Command dotnet -ErrorAction SilentlyContinue
+    if ($command) {
+        $hosts += $command.Source
+    }
+    foreach ($root in (Get-DotNetInstallRoots)) {
+        $hosts += (Join-Path $root "dotnet.exe")
+    }
+
+    $seen = @{}
+    foreach ($hostExe in $hosts) {
+        if (-not $hostExe -or $seen.ContainsKey($hostExe.ToLowerInvariant())) {
+            continue
+        }
+        $seen[$hostExe.ToLowerInvariant()] = $true
+
+        $lines = @(Get-SdkLines -DotNetExe $hostExe)
+        foreach ($line in $lines) {
+            if ($line -match "^10\.") {
+                return @{
+                    Exe   = $hostExe
+                    Lines = $lines
+                    Root  = Split-Path -Parent $hostExe
+                }
+            }
+        }
+    }
+
+    foreach ($root in (Get-DotNetInstallRoots)) {
+        $sdkDir = Join-Path $root "sdk"
+        $exe = Join-Path $root "dotnet.exe"
+        if ((Test-Path -LiteralPath $exe) -and (Test-Path -LiteralPath $sdkDir)) {
+            $match = @(Get-ChildItem -LiteralPath $sdkDir -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "^10\." })
+            if ($match.Count -gt 0) {
+                return @{
+                    Exe   = $exe
+                    Lines = @($match | ForEach-Object { "$($_.Name) [$root]" })
+                    Root  = $root
+                }
+            }
+        }
+    }
+
+    return $null
+}
+
+function Install-DotNetSdkWithScript {
+    Write-Host "    Winget did not leave a usable .NET 10 SDK. Installing it for this user."
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $ProgressPreference = "SilentlyContinue"
+
+    $installDir = Join-Path $env:LocalAppData "dotnet"
+    $scriptPath = Join-Path $env:TEMP "dotnet-install.ps1"
+    Invoke-WebRequest -Uri "https://dot.net/v1/dotnet-install.ps1" -OutFile $scriptPath -UseBasicParsing
+    & $scriptPath -Channel "10.0" -InstallDir $installDir
+    if ($LASTEXITCODE -ne 0) {
+        throw "The .NET install script failed with exit code $LASTEXITCODE."
+    }
+
+    Use-DotNetRoot -Root $installDir
+}
+
+function Ensure-DotNet10 {
+    $savedRoot = $env:DOTNET_ROOT
+    $found = Find-DotNet10
+    if (-not $found -and $savedRoot) {
+        Write-Host "    DOTNET_ROOT is set to $savedRoot and no SDK was found there. Checking the normal install folders."
+        Remove-Item Env:DOTNET_ROOT -ErrorAction SilentlyContinue
+        $found = Find-DotNet10
+    }
+
+    if (-not $found) {
+        Write-Host "    No .NET 10 SDK was found. Asking WinGet to install it again."
+        & $script:WingetCommand install --id $DotNetPackageId --exact --source winget --force `
+            --accept-package-agreements --accept-source-agreements --disable-interactivity
+        $code = $LASTEXITCODE
+        if ($code -ne 0 -and $code -ne 3010 -and $WingetAlreadyInstalled -notcontains $code) {
+            Write-Host "    WinGet could not reinstall the SDK (exit code $code)."
+        }
+        Refresh-SessionPath
+        if ($savedRoot) {
+            Remove-Item Env:DOTNET_ROOT -ErrorAction SilentlyContinue
+        }
+        $found = Find-DotNet10
+    }
+
+    if (-not $found) {
+        Install-DotNetSdkWithScript
+        $found = Find-DotNet10
+    }
+
+    if (-not $found) {
+        throw "The dotnet command is available, but no .NET 10 SDK could be installed. Close other installers and run this script again."
+    }
+
+    Use-DotNetRoot -Root $found.Root
+    return @($found.Lines)
+}
+
 function Find-CodeCommand {
     $candidates = @(
         "$env:LOCALAPPDATA\Programs\Microsoft VS Code\bin\code.cmd",
@@ -326,26 +489,9 @@ if (-not (Test-Command "git")) {
 Write-Ok ("Git " + (& git --version))
 
 Write-Step "Checking the .NET SDK"
-if (-not (Test-Command "dotnet")) {
-    throw ".NET installed, but 'dotnet' is not on PATH yet. Close this window, open a new PowerShell window, and run the script again."
-}
-
-$sdkList = @(& dotnet --list-sdks)
-if ($LASTEXITCODE -ne 0 -or $sdkList.Count -eq 0) {
-    throw "The dotnet command is on PATH, but no SDK is registered. Re-run this script."
-}
-
-$hasNet10 = $false
-foreach ($line in @($sdkList)) {
-    if ($line -match "^10\.") {
-        $hasNet10 = $true
-    }
-}
-if (-not $hasNet10) {
-    throw ".NET is installed, but no 10.x SDK was found. Installed SDKs:`n$sdkList"
-}
+$sdkList = @(Ensure-DotNet10)
 Write-Ok "Installed SDKs:"
-foreach ($line in @($sdkList)) {
+foreach ($line in $sdkList) {
     Write-Host "      $line"
 }
 
